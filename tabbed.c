@@ -349,7 +349,8 @@ drawbar(void)
 		return;
 	}
 
-	nbh = barvisibility ? vbh : 0;
+	//nbh = barvisibility ? vbh : 0;
+    nbh = nclients > 1 ? vbh : 0;
 	if (bh != nbh) {
 		bh = nbh;
 		for (i = 0; i < nclients; i++)
