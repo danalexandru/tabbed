@@ -127,6 +127,7 @@ static void sendxembed(int c, long msg, long detail, long d1, long d2);
 static void setcmd(int argc, char *argv[], int);
 static void setup(void);
 static void sigchld(int unused);
+static void showbar(const Arg *arg);
 static void spawn(const Arg *arg);
 static int textnw(const char *text, unsigned int len);
 static void toggle(const Arg *arg);
@@ -171,6 +172,7 @@ static char winid[64];
 static char **cmd;
 static char *wmname = "tabbed";
 static const char *geometry;
+static Bool barvisibility = False;
 static unsigned long icon[ICON_WIDTH * ICON_HEIGHT + 2];
 
 static Colormap cmap;
@@ -345,7 +347,7 @@ drawbar(void)
 		return;
 	}
 
-	nbh = nclients > 1 ? vbh : 0;
+	nbh = barvisibility ? vbh : 0;
 	if (bh != nbh) {
 		bh = nbh;
 		for (i = 0; i < nclients; i++)
@@ -1157,6 +1159,13 @@ setup(void)
 
 	nextfocus = foreground;
 	focus(-1);
+}
+
+void
+showbar(const Arg *arg)
+{
+	barvisibility = arg->i;
+	drawbar();
 }
 
 void
