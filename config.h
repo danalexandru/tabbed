@@ -1,12 +1,14 @@
 /* See LICENSE file for copyright and license details. */
+#include "colorschemes.h"
 
 /* appearance */
 // static const char font[]        = "monospace:size=9";
 static const char font[]        = "Hack Nerd Font:pixelsize=14:antialias=true:autohint=true";
-static const char* normbgcolor  = "#14191F";
-static const char* normfgcolor  = "#8C92AC";
-static const char* selbgcolor   = "#1F2833";
-static const char* selfgcolor   = "#F3F3F6";
+/* static const char font[]        = "Monaco:pixelsize=12:antialias=true:autohint=true"; */
+static const char* normbgcolor  = CurrentColorScheme.Normal.Background;
+static const char* normfgcolor  = CurrentColorScheme.Normal.Foreground;
+static const char* selbgcolor   = CurrentColorScheme.Select.Background;
+static const char* selfgcolor   = CurrentColorScheme.Select.Foreground;
 static const char* urgbgcolor   = "#111111";
 static const char* urgfgcolor   = "#CC0000";
 static const char before[]      = "<";
