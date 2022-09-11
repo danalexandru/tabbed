@@ -52,8 +52,19 @@ const ColorScheme MatchaDark = {
 };
 
 
+const ColorScheme Gruvbox = {
+    .Normal = {
+        .Background = "#282828",
+        .Foreground = "#beab89",
+    },
+    .Select = {
+        .Background = "#3c3836",
+        .Foreground = "#d78700",
+    }
+};
+
 /************************************/
 /**      CURRENT COLORSCHEME        */
 /************************************/
-const ColorScheme CurrentColorScheme = MatchaDark;
+const ColorScheme CurrentColorScheme = Gruvbox;
 
