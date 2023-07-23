@@ -58,7 +58,7 @@ const ColorScheme Gruvbox = {
         .Foreground = "#ebdbb2",
     },
     .Select = {
-        .Background = "#3c3836",
+        .Background = "#1d2021",
         .Foreground = "#ffaf00",
     }
 };
@@ -85,8 +85,41 @@ const ColorScheme Ayu = {
     }
 };
 
+const ColorScheme SweetDark = {
+    .Normal = {
+        .Background = "#161925",
+        .Foreground = "#bbbbbb",
+    },
+    .Select = {
+        .Background = "#0c0e14",
+        .Foreground = "#F3F3F6",
+    }
+};
+
+const ColorScheme Dracula = {
+    .Normal = {
+        .Background = "#282a36",
+        .Foreground = "#f8f8f2",
+    },
+    .Select = {
+        .Background = "#1e1f29",
+        .Foreground = "#ff79c6",
+    },
+};
+
+const ColorScheme BreezeDark = {
+    .Normal = {
+        .Background = "#2a2e32",
+        .Foreground = "#eff0f1",
+    },
+    .Select = {
+        .Background = "#1b1e20",
+        .Foreground = "#eff0f1",
+    },
+};
+
 /************************************/
 /**      CURRENT COLORSCHEME        */
 /************************************/
-const ColorScheme CurrentColorScheme = Ayu;
+const ColorScheme CurrentColorScheme = Gruvbox;
 
