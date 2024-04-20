@@ -19,7 +19,6 @@
 #include <X11/Xft/Xft.h>
 
 #include "arg.h"
-#include "icon.h"
 
 /* XEMBED messages */
 #define XEMBED_EMBEDDED_NOTIFY          0
@@ -51,7 +50,7 @@
 
 enum { ColFG, ColBG, ColLast };       /* color */
 enum { WMProtocols, WMDelete, WMName, WMState, WMFullscreen,
-       XEmbed, WMSelectTab, WMIcon, WMLast }; /* default atoms */
+       XEmbed, WMSelectTab, WMLast }; /* default atoms */
 
 typedef union {
 	int i;
@@ -115,7 +114,6 @@ static Bool gettextprop(Window w, Atom atom, char *text, unsigned int size);
 static void initfont(const char *fontstr);
 static Bool isprotodel(int c);
 static void keypress(const XEvent *e);
-static void keyrelease(const XEvent *e);
 static void killclient(const Arg *arg);
 static void manage(Window win);
 static void maprequest(const XEvent *e);
@@ -128,8 +126,6 @@ static void run(void);
 static void sendxembed(int c, long msg, long detail, long d1, long d2);
 static void setcmd(int argc, char *argv[], int);
 static void setup(void);
-static void sigchld(int unused);
-static void showbar(const Arg *arg);
 static void spawn(const Arg *arg);
 static int textnw(const char *text, unsigned int len);
 static void toggle(const Arg *arg);
@@ -139,7 +135,6 @@ static void updatenumlockmask(void);
 static void updatetitle(int c);
 static int xerror(Display *dpy, XErrorEvent *ee);
 static void xsettitle(Window w, const char *str);
-static void xseticon(void);
 
 /* variables */
 static int screen;
@@ -154,7 +149,6 @@ static void (*handler[LASTEvent]) (const XEvent *) = {
 	[Expose] = expose,
 	[FocusIn] = focusin,
 	[KeyPress] = keypress,
-	[KeyRelease] = keyrelease,
 	[MapRequest] = maprequest,
 	[PropertyNotify] = propertynotify,
 };
@@ -175,11 +169,6 @@ static char winid[64];
 static char **cmd;
 static char *wmname = "tabbed";
 static const char *geometry;
-static Bool barvisibility = False;
-static unsigned long icon[ICON_WIDTH * ICON_HEIGHT + 2];
-
-static Colormap cmap;
-static Visual *visual = NULL;
 
 char *argv0;
 
@@ -265,8 +254,8 @@ configurenotify(const XEvent *e)
 		ww = ev->width;
 		wh = ev->height;
 		XFreePixmap(dpy, dc.drawable);
-		dc.drawable = XCreatePixmap(dpy, win, ww, wh,
-		              32);
+		dc.drawable = XCreatePixmap(dpy, root, ww, wh,
+		              DefaultDepth(dpy, screen));
 
 		if (!obh && (wh <= bh)) {
 			obh = bh;
@@ -337,7 +326,6 @@ drawbar(void)
 	XftColor *col;
 	int c, cc, fc, width, nbh, i;
 	char *name = NULL;
-	char tabtitle[256];
 
 	if (nclients == 0) {
 		dc.x = 0;
@@ -350,8 +338,7 @@ drawbar(void)
 		return;
 	}
 
-	//nbh = barvisibility ? vbh : 0;
-    nbh = nclients > 1 ? vbh : 0;
+	nbh = nclients > 1 ? vbh : 0;
 	if (bh != nbh) {
 		bh = nbh;
 		for (i = 0; i < nclients; i++)
@@ -389,9 +376,7 @@ drawbar(void)
 		} else {
 			col = clients[c]->urgent ? dc.urg : dc.norm;
 		}
-		snprintf(tabtitle, sizeof(tabtitle), "%d: %s",
-		         c + 1, clients[c]->name);
-		drawtext(tabtitle, col);
+		drawtext(clients[c]->name, col);
 		dc.x += dc.w;
 		clients[c]->tabx = dc.x;
 	}
@@ -431,7 +416,7 @@ drawtext(const char *text, XftColor col[ColLast])
 			;
 	}
 
-	d = XftDrawCreate(dpy, dc.drawable, visual, cmap);
+	d = XftDrawCreate(dpy, dc.drawable, DefaultVisual(dpy, screen), DefaultColormap(dpy, screen));
 	XftDrawStringUtf8(d, &col[ColFG], dc.font.xfont, x, y, (XftChar8 *) buf, len);
 	XftDrawDestroy(d);
 }
@@ -479,8 +464,6 @@ focus(int c)
 			n += snprintf(&buf[n], sizeof(buf) - n, " %s", cmd[i]);
 
 		xsettitle(win, buf);
-		XChangeProperty(dpy, win, wmatom[WMIcon], XA_CARDINAL, 32,
-		                PropModeReplace, (unsigned char *) icon, ICON_WIDTH * ICON_HEIGHT + 2);
 		XRaiseWindow(dpy, win);
 
 		return;
@@ -500,8 +483,6 @@ focus(int c)
 		lastsel = sel;
 		sel = c;
 	}
-
-	xseticon();
 
 	if (clients[c]->urgent && (wmh = XGetWMHints(dpy, clients[c]->win))) {
 		wmh->flags &= ~XUrgencyHint;
@@ -603,7 +584,7 @@ getcolor(const char *colstr)
 {
 	XftColor color;
 
-    if (!XftColorAllocName(dpy, visual, cmap, colstr, &color))
+	if (!XftColorAllocName(dpy, DefaultVisual(dpy, screen), DefaultColormap(dpy, screen), colstr, &color))
 		die("%s: cannot allocate color '%s'\n", argv0, colstr);
 
 	return color;
@@ -702,22 +683,6 @@ keypress(const XEvent *e)
 }
 
 void
-keyrelease(const XEvent *e)
-{
-	const XKeyEvent *ev = &e->xkey;
-	unsigned int i;
-	KeySym keysym;
-
-	keysym = XkbKeycodeToKeysym(dpy, (KeyCode)ev->keycode, 0, 0);
-	for (i = 0; i < LENGTH(keyreleases); i++) {
-		if (keysym == keyreleases[i].keysym &&
-		    CLEANMASK(keyreleases[i].mod) == CLEANMASK(ev->state) &&
-		    keyreleases[i].func)
-			keyreleases[i].func(&(keyreleases[i].arg));
-	}
-}
-
-void
 killclient(const Arg *arg)
 {
 	XEvent ev;
@@ -761,16 +726,6 @@ manage(Window w)
 			if ((code = XKeysymToKeycode(dpy, keys[i].keysym))) {
 				for (j = 0; j < LENGTH(modifiers); j++) {
 					XGrabKey(dpy, code, keys[i].mod |
-					         modifiers[j], w, True,
-					         GrabModeAsync, GrabModeAsync);
-				}
-			}
-		}
-
-		for (i = 0; i < LENGTH(keyreleases); i++) {
-			if ((code = XKeysymToKeycode(dpy, keyreleases[i].keysym))) {
-				for (j = 0; j < LENGTH(modifiers); j++) {
-					XGrabKey(dpy, code, keyreleases[i].mod |
 					         modifiers[j], w, True,
 					         GrabModeAsync, GrabModeAsync);
 				}
@@ -841,12 +796,8 @@ maprequest(const XEvent *e)
 void
 move(const Arg *arg)
 {
-	int i;
-
-	i = arg->i < nclients ? arg->i : nclients - 1;
-
-	if (i >= 0)
-		focus(i);
+	if (arg->i >= 0 && arg->i < nclients)
+		focus(arg->i);
 }
 
 void
@@ -926,13 +877,9 @@ propertynotify(const XEvent *e)
 			}
 		}
 		XFree(wmh);
-		if (c == sel)
-			xseticon();
 	} else if (ev->state != PropertyDelete && ev->atom == XA_WM_NAME &&
 	           (c = getclient(ev->window)) > -1) {
 		updatetitle(c);
-	} else if (ev->atom == wmatom[WMIcon] && (c = getclient(ev->window)) > -1 && c == sel) {
-		xseticon();
 	}
 }
 
@@ -1053,7 +1000,7 @@ setup(void)
 	screen = DefaultScreen(dpy);
 	root = RootWindow(dpy, screen);
 	initfont(font);
-	vbh = dc.h = barHeight;
+	vbh = dc.h = dc.font.height + 2;
 
 	/* init atoms */
 	wmatom[WMDelete] = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
@@ -1064,7 +1011,6 @@ setup(void)
 	wmatom[WMSelectTab] = XInternAtom(dpy, "_TABBED_SELECT_TAB", False);
 	wmatom[WMState] = XInternAtom(dpy, "_NET_WM_STATE", False);
 	wmatom[XEmbed] = XInternAtom(dpy, "_XEMBED", False);
-	wmatom[WMIcon] = XInternAtom(dpy, "_NET_WM_ICON", False);
 
 	/* init appearance */
 	wx = 0;
@@ -1088,7 +1034,7 @@ setup(void)
 		if (bitm & XNegative && wx == 0)
 			wx = -1;
 		if (bitm & YNegative && wy == 0)
-            wy = -1;
+			wy = -1;
 		if (bitm & (HeightValue | WidthValue))
 			isfixed = 1;
 
@@ -1100,65 +1046,22 @@ setup(void)
 			wy = dh + wy - wh - 1;
 	}
 
-	XVisualInfo *vis;
-	XRenderPictFormat *fmt;
-	int nvi;
-	int i;
-
-	XVisualInfo tpl = {
-		.screen = screen,
-		.depth = 32,
-		.class = TrueColor
-	};
-
-	vis = XGetVisualInfo(dpy, VisualScreenMask | VisualDepthMask | VisualClassMask, &tpl, &nvi);
-	for(i = 0; i < nvi; i ++) {
-		fmt = XRenderFindVisualFormat(dpy, vis[i].visual);
-		if (fmt->type == PictTypeDirect && fmt->direct.alphaMask) {
-			visual = vis[i].visual;
-			break;
-		}
-	}
-
-	XFree(vis);
-
-	if (! visual) {
-		fprintf(stderr, "Couldn't find ARGB visual.\n");
-		exit(1);
-	}
-
-	cmap = XCreateColormap( dpy, root, visual, None);
-
 	dc.norm[ColBG] = getcolor(normbgcolor);
 	dc.norm[ColFG] = getcolor(normfgcolor);
 	dc.sel[ColBG] = getcolor(selbgcolor);
 	dc.sel[ColFG] = getcolor(selfgcolor);
 	dc.urg[ColBG] = getcolor(urgbgcolor);
 	dc.urg[ColFG] = getcolor(urgfgcolor);
+	dc.drawable = XCreatePixmap(dpy, root, ww, wh,
+	                            DefaultDepth(dpy, screen));
+	dc.gc = XCreateGC(dpy, root, 0, 0);
 
-	XSetWindowAttributes attrs;
-	attrs.background_pixel = dc.norm[ColBG].pixel;
-	attrs.border_pixel = dc.norm[ColFG].pixel;
-	attrs.bit_gravity = NorthWestGravity;
-	attrs.event_mask = FocusChangeMask | KeyPressMask
-		| ExposureMask | VisibilityChangeMask | StructureNotifyMask
-		| ButtonMotionMask | ButtonPressMask | ButtonReleaseMask;
-	attrs.background_pixmap = None ;
-	attrs.colormap = cmap;
-
-	win = XCreateWindow(dpy, root, wx, wy,
-	ww, wh, 0, 32, InputOutput,
-	visual, CWBackPixmap | CWBorderPixel | CWBitGravity
-	| CWEventMask | CWColormap, &attrs);
-
-	dc.drawable = XCreatePixmap(dpy, win, ww, wh,
-	                            32);
-	dc.gc = XCreateGC(dpy, dc.drawable, 0, 0);
-
+	win = XCreateSimpleWindow(dpy, root, wx, wy, ww, wh, 0,
+	                          dc.norm[ColFG].pixel, dc.norm[ColBG].pixel);
 	XMapRaised(dpy, win);
 	XSelectInput(dpy, win, SubstructureNotifyMask | FocusChangeMask |
 	             ButtonPressMask | ExposureMask | KeyPressMask |
-	             KeyReleaseMask | PropertyChangeMask | StructureNotifyMask |
+	             PropertyChangeMask | StructureNotifyMask |
 	             SubstructureRedirectMask);
 	xerrorxlib = XSetErrorHandler(xerror);
 
@@ -1187,35 +1090,8 @@ setup(void)
 	snprintf(winid, sizeof(winid), "%lu", win);
 	setenv("XEMBED", winid, 1);
 
-	/* change icon from RGBA to ARGB */
-	icon[0] = ICON_WIDTH;
-	icon[1] =  ICON_HEIGHT;
-	for (int i = 0; i < ICON_WIDTH * ICON_HEIGHT; ++i) {
-		icon[i + 2] =
-		    ICON_PIXEL_DATA[i * 4 + 3] << 24 |
-		    ICON_PIXEL_DATA[i * 4 + 0] <<  0 |
-		    ICON_PIXEL_DATA[i * 4 + 1] <<  8 |
-		    ICON_PIXEL_DATA[i * 4 + 2] << 16 ;
-	}
-
 	nextfocus = foreground;
 	focus(-1);
-}
-
-void
-showbar(const Arg *arg)
-{
-	barvisibility = arg->i;
-	drawbar();
-}
-
-void
-sigchld(int unused)
-{
-	if (signal(SIGCHLD, sigchld) == SIG_ERR)
-		die("%s: cannot install SIGCHLD handler", argv0);
-
-	while (0 < waitpid(-1, NULL, WNOHANG));
 }
 
 void
@@ -1402,46 +1278,6 @@ xsettitle(Window w, const char *str)
 		XSetTextProperty(dpy, w, &xtp, XA_WM_NAME);
 		XFree(xtp.value);
 	}
-}
-
-void
-xseticon(void)
-{
-	Atom ret_type;
-	XWMHints *wmh, *cwmh;
-	int ret_format;
-	unsigned long ret_nitems, ret_nleft;
-	long offset = 0L;
-	unsigned char *data;
-
-	wmh = XGetWMHints(dpy, win);
-	wmh->flags &= ~(IconPixmapHint | IconMaskHint);
-	wmh->icon_pixmap = wmh->icon_mask = None;
-
-
-	if (XGetWindowProperty(dpy, clients[sel]->win, wmatom[WMIcon], offset, LONG_MAX, False,
-	                       XA_CARDINAL, &ret_type, &ret_format, &ret_nitems,
-	                       &ret_nleft, &data) == Success &&
-	    ret_type == XA_CARDINAL && ret_format == 32)
-	{
-		XChangeProperty(dpy, win, wmatom[WMIcon], XA_CARDINAL, 32,
-		                PropModeReplace, data, ret_nitems);
-	} else if ((cwmh = XGetWMHints(dpy, clients[sel]->win)) && cwmh->flags & IconPixmapHint) {
-		XDeleteProperty(dpy, win, wmatom[WMIcon]);
-		wmh->flags |= IconPixmapHint;
-		wmh->icon_pixmap = cwmh->icon_pixmap;
-		if (cwmh->flags & IconMaskHint) {
-			wmh->flags |= IconMaskHint;
-			wmh->icon_mask = cwmh->icon_mask;
-		}
-		XFree(cwmh);
-	} else {
-		XChangeProperty(dpy, win, wmatom[WMIcon], XA_CARDINAL, 32,
-		                PropModeReplace, (unsigned char *) icon, ICON_WIDTH * ICON_HEIGHT + 2);
-	}
-	XSetWMHints(dpy, win, wmh);
-	XFree(wmh);
-	XFree(data);
 }
 
 void
