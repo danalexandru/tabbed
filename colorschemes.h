@@ -77,11 +77,11 @@ const ColorScheme GruvboxMaterial = {
 const ColorScheme Ayu = {
     .Normal = {
         .Background = "#0A0B11",
-        .Foreground = "#5C6773",
+        .Foreground = "#F3F3F6",
     },
     .Select = {
-        .Background = "#212733",
-        .Foreground = "#F3F3F6",
+        .Background = "#1c1e29",
+        .Foreground = "#FFBF00",
     }
 };
 

@@ -2,9 +2,7 @@
 #include "colorschemes.h"
 
 /* appearance */
-// static const char font[]        = "monospace:size=9";
-static const char font[]        = "Hack Nerd Font:pixelsize=14:antialias=true:autohint=true";
-/* static const char font[]        = "Monaco:pixelsize=12:antialias=true:autohint=true"; */
+static const char font[]        = "Hack Nerd Font:pixelsize=12:antialias=true:autohint=true";
 static const char* normbgcolor  = CurrentColorScheme.Normal.Background;
 static const char* normfgcolor  = CurrentColorScheme.Normal.Foreground;
 static const char* selbgcolor   = CurrentColorScheme.Select.Background;
@@ -25,8 +23,8 @@ static const int barHeight	= 20;
  * then the current position is changed + newposition. If npisrelative
  * is False, then newposition is an absolute position.
  */
-static int  newposition   = 0;
-static Bool npisrelative  = False;
+static int  newposition   = 1;
+static Bool npisrelative  = True;
 
 #define SETPROP(p) { \
         .v = (char *[]){ "/bin/sh", "-c", \
