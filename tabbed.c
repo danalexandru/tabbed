@@ -11,6 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <X11/Xatom.h>
+#include <X11/keysym.h>
 #include <X11/Xlib.h>
 #include <X11/Xproto.h>
 #include <X11/Xutil.h>
@@ -114,7 +115,6 @@ static Bool gettextprop(Window w, Atom atom, char *text, unsigned int size);
 static void initfont(const char *fontstr);
 static Bool isprotodel(int c);
 static void keypress(const XEvent *e);
-static void keyrelease(const XEvent *e);
 static void killclient(const Arg *arg);
 static void manage(Window win);
 static void maprequest(const XEvent *e);
@@ -127,8 +127,6 @@ static void run(void);
 static void sendxembed(int c, long msg, long detail, long d1, long d2);
 static void setcmd(int argc, char *argv[], int);
 static void setup(void);
-static void sigchld(int unused);
-static void showbar(const Arg *arg);
 static void spawn(const Arg *arg);
 static int textnw(const char *text, unsigned int len);
 static void toggle(const Arg *arg);
@@ -153,7 +151,6 @@ static void (*handler[LASTEvent]) (const XEvent *) = {
 	[Expose] = expose,
 	[FocusIn] = focusin,
 	[KeyPress] = keypress,
-	[KeyRelease] = keyrelease,
 	[MapRequest] = maprequest,
 	[PropertyNotify] = propertynotify,
 };
@@ -174,11 +171,7 @@ static char winid[64];
 static char **cmd;
 static char *wmname = "tabbed";
 static const char *geometry;
-static Bool barvisibility = False;
 static unsigned long icon[ICON_WIDTH * ICON_HEIGHT + 2];
-
-static Colormap cmap;
-static Visual *visual = NULL;
 
 char *argv0;
 
@@ -264,8 +257,8 @@ configurenotify(const XEvent *e)
 		ww = ev->width;
 		wh = ev->height;
 		XFreePixmap(dpy, dc.drawable);
-		dc.drawable = XCreatePixmap(dpy, win, ww, wh,
-		              32);
+		dc.drawable = XCreatePixmap(dpy, root, ww, wh,
+		              DefaultDepth(dpy, screen));
 
 		if (!obh && (wh <= bh)) {
 			obh = bh;
@@ -336,7 +329,6 @@ drawbar(void)
 	XftColor *col;
 	int c, cc, fc, width, nbh, i;
 	char *name = NULL;
-	char tabtitle[256];
 
 	if (nclients == 0) {
 		dc.x = 0;
@@ -349,8 +341,7 @@ drawbar(void)
 		return;
 	}
 
-	//nbh = barvisibility ? vbh : 0;
-    nbh = nclients > 1 ? vbh : 0;
+	nbh = nclients > 1 ? vbh : 0;
 	if (bh != nbh) {
 		bh = nbh;
 		for (i = 0; i < nclients; i++)
@@ -388,9 +379,7 @@ drawbar(void)
 		} else {
 			col = clients[c]->urgent ? dc.urg : dc.norm;
 		}
-		snprintf(tabtitle, sizeof(tabtitle), "%d: %s",
-		         c + 1, clients[c]->name);
-		drawtext(tabtitle, col);
+		drawtext(clients[c]->name, col);
 		dc.x += dc.w;
 		clients[c]->tabx = dc.x;
 	}
@@ -430,7 +419,7 @@ drawtext(const char *text, XftColor col[ColLast])
 			;
 	}
 
-	d = XftDrawCreate(dpy, dc.drawable, visual, cmap);
+	d = XftDrawCreate(dpy, dc.drawable, DefaultVisual(dpy, screen), DefaultColormap(dpy, screen));
 	XftDrawStringUtf8(d, &col[ColFG], dc.font.xfont, x, y, (XftChar8 *) buf, len);
 	XftDrawDestroy(d);
 }
@@ -499,7 +488,6 @@ focus(int c)
 		lastsel = sel;
 		sel = c;
 	}
-
 	xseticon();
 
 	if (clients[c]->urgent && (wmh = XGetWMHints(dpy, clients[c]->win))) {
@@ -602,7 +590,7 @@ getcolor(const char *colstr)
 {
 	XftColor color;
 
-    if (!XftColorAllocName(dpy, visual, cmap, colstr, &color))
+	if (!XftColorAllocName(dpy, DefaultVisual(dpy, screen), DefaultColormap(dpy, screen), colstr, &color))
 		die("%s: cannot allocate color '%s'\n", argv0, colstr);
 
 	return color;
@@ -701,22 +689,6 @@ keypress(const XEvent *e)
 }
 
 void
-keyrelease(const XEvent *e)
-{
-	const XKeyEvent *ev = &e->xkey;
-	unsigned int i;
-	KeySym keysym;
-
-	keysym = XkbKeycodeToKeysym(dpy, (KeyCode)ev->keycode, 0, 0);
-	for (i = 0; i < LENGTH(keyreleases); i++) {
-		if (keysym == keyreleases[i].keysym &&
-		    CLEANMASK(keyreleases[i].mod) == CLEANMASK(ev->state) &&
-		    keyreleases[i].func)
-			keyreleases[i].func(&(keyreleases[i].arg));
-	}
-}
-
-void
 killclient(const Arg *arg)
 {
 	XEvent ev;
@@ -760,16 +732,6 @@ manage(Window w)
 			if ((code = XKeysymToKeycode(dpy, keys[i].keysym))) {
 				for (j = 0; j < LENGTH(modifiers); j++) {
 					XGrabKey(dpy, code, keys[i].mod |
-					         modifiers[j], w, True,
-					         GrabModeAsync, GrabModeAsync);
-				}
-			}
-		}
-
-		for (i = 0; i < LENGTH(keyreleases); i++) {
-			if ((code = XKeysymToKeycode(dpy, keyreleases[i].keysym))) {
-				for (j = 0; j < LENGTH(modifiers); j++) {
-					XGrabKey(dpy, code, keyreleases[i].mod |
 					         modifiers[j], w, True,
 					         GrabModeAsync, GrabModeAsync);
 				}
@@ -840,12 +802,8 @@ maprequest(const XEvent *e)
 void
 move(const Arg *arg)
 {
-	int i;
-
-	i = arg->i < nclients ? arg->i : nclients - 1;
-
-	if (i >= 0)
-		focus(i);
+	if (arg->i >= 0 && arg->i < nclients)
+		focus(arg->i);
 }
 
 void
@@ -1037,15 +995,22 @@ setup(void)
 	XWMHints *wmh;
 	XClassHint class_hint;
 	XSizeHints *size_hint;
+	struct sigaction sa;
 
-	/* clean up any zombies immediately */
-	sigchld(0);
+	/* do not transform children into zombies when they terminate */
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_NOCLDSTOP | SA_NOCLDWAIT | SA_RESTART;
+	sa.sa_handler = SIG_IGN;
+	sigaction(SIGCHLD, &sa, NULL);
+
+	/* clean up any zombies that might have been inherited */
+	while (waitpid(-1, NULL, WNOHANG) > 0);
 
 	/* init screen */
 	screen = DefaultScreen(dpy);
 	root = RootWindow(dpy, screen);
 	initfont(font);
-	vbh = dc.h = barHeight;
+	vbh = dc.h = dc.font.height + 2;
 
 	/* init atoms */
 	wmatom[WMDelete] = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
@@ -1080,7 +1045,7 @@ setup(void)
 		if (bitm & XNegative && wx == 0)
 			wx = -1;
 		if (bitm & YNegative && wy == 0)
-            wy = -1;
+			wy = -1;
 		if (bitm & (HeightValue | WidthValue))
 			isfixed = 1;
 
@@ -1092,65 +1057,22 @@ setup(void)
 			wy = dh + wy - wh - 1;
 	}
 
-	XVisualInfo *vis;
-	XRenderPictFormat *fmt;
-	int nvi;
-	int i;
-
-	XVisualInfo tpl = {
-		.screen = screen,
-		.depth = 32,
-		.class = TrueColor
-	};
-
-	vis = XGetVisualInfo(dpy, VisualScreenMask | VisualDepthMask | VisualClassMask, &tpl, &nvi);
-	for(i = 0; i < nvi; i ++) {
-		fmt = XRenderFindVisualFormat(dpy, vis[i].visual);
-		if (fmt->type == PictTypeDirect && fmt->direct.alphaMask) {
-			visual = vis[i].visual;
-			break;
-		}
-	}
-
-	XFree(vis);
-
-	if (! visual) {
-		fprintf(stderr, "Couldn't find ARGB visual.\n");
-		exit(1);
-	}
-
-	cmap = XCreateColormap( dpy, root, visual, None);
-
 	dc.norm[ColBG] = getcolor(normbgcolor);
 	dc.norm[ColFG] = getcolor(normfgcolor);
 	dc.sel[ColBG] = getcolor(selbgcolor);
 	dc.sel[ColFG] = getcolor(selfgcolor);
 	dc.urg[ColBG] = getcolor(urgbgcolor);
 	dc.urg[ColFG] = getcolor(urgfgcolor);
+	dc.drawable = XCreatePixmap(dpy, root, ww, wh,
+	                            DefaultDepth(dpy, screen));
+	dc.gc = XCreateGC(dpy, root, 0, 0);
 
-	XSetWindowAttributes attrs;
-	attrs.background_pixel = dc.norm[ColBG].pixel;
-	attrs.border_pixel = dc.norm[ColFG].pixel;
-	attrs.bit_gravity = NorthWestGravity;
-	attrs.event_mask = FocusChangeMask | KeyPressMask
-		| ExposureMask | VisibilityChangeMask | StructureNotifyMask
-		| ButtonMotionMask | ButtonPressMask | ButtonReleaseMask;
-	attrs.background_pixmap = None ;
-	attrs.colormap = cmap;
-
-	win = XCreateWindow(dpy, root, wx, wy,
-	ww, wh, 0, 32, InputOutput,
-	visual, CWBackPixmap | CWBorderPixel | CWBitGravity
-	| CWEventMask | CWColormap, &attrs);
-
-	dc.drawable = XCreatePixmap(dpy, win, ww, wh,
-	                            32);
-	dc.gc = XCreateGC(dpy, dc.drawable, 0, 0);
-
+	win = XCreateSimpleWindow(dpy, root, wx, wy, ww, wh, 0,
+	                          dc.norm[ColFG].pixel, dc.norm[ColBG].pixel);
 	XMapRaised(dpy, win);
 	XSelectInput(dpy, win, SubstructureNotifyMask | FocusChangeMask |
 	             ButtonPressMask | ExposureMask | KeyPressMask |
-	             KeyReleaseMask | PropertyChangeMask | StructureNotifyMask |
+	             PropertyChangeMask | StructureNotifyMask |
 	             SubstructureRedirectMask);
 	xerrorxlib = XSetErrorHandler(xerror);
 
@@ -1195,29 +1117,21 @@ setup(void)
 }
 
 void
-showbar(const Arg *arg)
-{
-	barvisibility = arg->i;
-	drawbar();
-}
-
-void
-sigchld(int unused)
-{
-	if (signal(SIGCHLD, sigchld) == SIG_ERR)
-		die("%s: cannot install SIGCHLD handler", argv0);
-
-	while (0 < waitpid(-1, NULL, WNOHANG));
-}
-
-void
 spawn(const Arg *arg)
 {
+	struct sigaction sa;
+
 	if (fork() == 0) {
 		if(dpy)
 			close(ConnectionNumber(dpy));
 
 		setsid();
+
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = 0;
+		sa.sa_handler = SIG_DFL;
+		sigaction(SIGCHLD, &sa, NULL);
+
 		if (arg && arg->v) {
 			execvp(((char **)arg->v)[0], (char **)arg->v);
 			fprintf(stderr, "%s: execvp %s", argv0,
