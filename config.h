@@ -2,7 +2,7 @@
 #include "colorschemes.h"
 
 /* appearance */
-static const char font[]        = "Hack Nerd Font:pixelsize=12:antialias=true:autohint=true";
+static const char font[]        = "Hack Nerd Font:pixelsize=14:antialias=true:autohint=true";
 static const char* normbgcolor  = CurrentColorScheme.Normal.Background;
 static const char* normfgcolor  = CurrentColorScheme.Normal.Foreground;
 static const char* selbgcolor   = CurrentColorScheme.Select.Background;
